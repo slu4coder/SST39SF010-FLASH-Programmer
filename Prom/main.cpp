@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
 										checksum += rec;
 										lastticks = nowticks;
 									}
-								} while (nowticks - lastticks < 100);
+								} while (nowticks - lastticks < 500);
 								std::cout << "VERIFYING: " << errors << " errors" << std::endl;
 								std::cout << "READ bytesize = " << pos << ", checksum = " << checksum << std::endl;
 							} else std::cout << "ERROR: Unable to verify: " << int(rec) << std::endl;
@@ -217,7 +217,7 @@ int main(int argc, char *argv[])
 								if (file.is_open()) file << rec;
 								lastticks = nowticks;
 							}
-						} while (nowticks - lastticks < 100);
+						} while (nowticks - lastticks < 500);
 						if (file.is_open()) file.close();
 						std::cout << "READ bytesize = " << bytesize << ", checksum = " << checksum << std::endl;
 						com.Close();
