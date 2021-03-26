@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 					{
 						std::cout << "Opened COM" << port << std::endl;
 						UCHAR rec;
-						do { com.SendByte('w'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);
+						do { com.SendByte('w'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf Bestätigung
 						if(rec == 'W')
 						{
 							std::cout << "WRITE MODE" << std::endl;
@@ -195,12 +195,8 @@ int main(int argc, char *argv[])
 				{
 					std::cout << "Opened COM" << port << std::endl;
 					UCHAR rec;
-					do
-					{
-						com.SendByte('r');
-						Sleep(100);
-					} while(com.ReadData(&rec, 1) == 0);
-					if (rec == 'R')
+					do { com.SendByte('r'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf eine Antwort
+					if (rec == 'R')													// kam das 'R'
 					{
 						std::cout << "READ MODE" << std::endl;
 						uint32_t bytesize = 0, checksum = 0;
