@@ -1,5 +1,8 @@
 // SST39SF010 Flash EEPROM Programmer by Carsten Herting 25.12.2020
-
+// This will program images files up to 128KB into SST39SF010
+// This will program images files up to 64KB into SST39SF020/040
+// If you want to program images > 64KB into SST39SF020 or SST39SF040 please use the
+// updated schematic 1.1 that includes address lines A16-18.
 #define READSIZE          0x2000                      // ADJUST YOURSELF: bytesize of the chunk to read from the chip
 
 #define SET_OE(state)     bitWrite(PORTB, 0, state)   // must be high for write process
@@ -11,8 +14,8 @@ void setup()
 {
   PORTB = 0b00100011;             // LED on, /WE=HIGH, /OE=HIGH
   DDRB = 0b00111111;
-  PORTC = 0; DDRC = 0;
-  PORTD = 0; DDRD = 0b10000000;
+  PORTC = 0; DDRC = 0b00111000;   // for upwards compatibility: new breadboard version uses C3-5 for A16-18
+  PORTD = 0; DDRD = 0b10000000;   // used by old version for A16
   Serial.begin(115200);
 }
 
@@ -74,7 +77,7 @@ void SetAddress(long adr)
 
 void ToRead()
 {
-  DDRC = 0b00000000;            // set to input and switch off pull-ups
+  DDRC = 0b00111000;            // set to input and switch off pull-ups
   PORTC = 0b00000000;
   DDRD &= 0b10000011;
   PORTD &= 0b10000011;
@@ -82,7 +85,7 @@ void ToRead()
 
 void WriteTo(byte data)
 {
-  DDRC = 0b00000111;          // set to outputs
+  DDRC = 0b00111111;          // set to outputs
   PORTC = data & 0b00000111;
   DDRD |= 0b01111100;
   PORTD = (PIND & 0b10000011) | ((data & 0b11111000) >> 1);
