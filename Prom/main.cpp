@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 					{
 						std::cout << "Opened COM" << port << std::endl;
 						UCHAR rec;
-						do { com.SendByte('w'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf Bestätigung
+						do { com.SendByte('w'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);
 						if(rec == 'W')
 						{
 							std::cout << "WRITE MODE" << std::endl;
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
 										checksum += rec;
 										lastticks = nowticks;
 									}
-								} while (nowticks - lastticks < 500);
+								} while (nowticks - lastticks < 100);
 								std::cout << "VERIFYING: " << errors << " errors" << std::endl;
 								std::cout << "READ bytesize = " << pos << ", checksum = " << checksum << std::endl;
 							} else std::cout << "ERROR: Unable to verify: " << int(rec) << std::endl;
@@ -195,8 +195,12 @@ int main(int argc, char *argv[])
 				{
 					std::cout << "Opened COM" << port << std::endl;
 					UCHAR rec;
-					do { com.SendByte('r'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf eine Antwort
-					if (rec == 'R')													// kam das 'R'
+					do
+					{
+						com.SendByte('r');
+						Sleep(100);
+					} while(com.ReadData(&rec, 1) == 0);
+					if (rec == 'R')
 					{
 						std::cout << "READ MODE" << std::endl;
 						uint32_t bytesize = 0, checksum = 0;
@@ -213,7 +217,7 @@ int main(int argc, char *argv[])
 								if (file.is_open()) file << rec;
 								lastticks = nowticks;
 							}
-						} while (nowticks - lastticks < 500);
+						} while (nowticks - lastticks < 100);
 						if (file.is_open()) file.close();
 						std::cout << "READ bytesize = " << bytesize << ", checksum = " << checksum << std::endl;
 						com.Close();
