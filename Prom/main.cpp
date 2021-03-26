@@ -89,7 +89,7 @@ protected:
 
 void helpscreen()
 {
-	std::cout << "DIY AT28C64B EEPROM Programmer v1.0\n";
+	std::cout << "DIY AT28C64B / SST39SF0x0A Programmer v1.0\n";
 	std::cout << "written by Carsten Herting (2020)\n\n";
 	std::cout << "Usage: prom [OPTION]\n";
 	std::cout << " -wFILENAME     Writes the content of FILENAME to the EEPROM.\n";
