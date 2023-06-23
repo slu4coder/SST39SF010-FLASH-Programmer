@@ -1,5 +1,5 @@
-// Chip Programmer written by Cartsten Herting (2020)
-// for parallel EEPROM AT28C64B (8K) and parallel FLASH SST39SF010A (128K)
+// Chip Programmer written by Cartsten Herting (2020-2023)
+// for parallel FLASH SST39SF0x0A (max. 512KB)
 
 #include <windows.h>
 #include <iostream>
@@ -89,142 +89,96 @@ protected:
 
 void helpscreen()
 {
-	std::cout << "DIY AT28C64B / SST39SF0x0A Programmer v1.0\n";
-	std::cout << "written by Carsten Herting (2020)\n\n";
-	std::cout << "Usage: prom [OPTION]\n";
-	std::cout << " -wFILENAME     Writes the content of FILENAME to the EEPROM.\n";
-	std::cout << "                The content of the EEPROM is read back and verified.\n";
-	std::cout << " -r[FILENAME]   Reads the content of the EEPROM [to FILENAME].\n";
-	std::cout << " -cFILENAME     Prints the 32-bit checksum of FILENAME.\n";
-	std::cout << " -h or --help   Prints this help screen.\n";
+	std::cout << "Usage: prom <file>\n";
+	std::cout << "Writes the binary content of <file> to FLASH.\n";
+	std::cout << "All data is read back and verified.\n";
 }
 
 int main(int argc, char *argv[])
 {		
 	SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), 0b111);		// enable ANSI control sequences in WINDOWS console
-
-	if (argc == 2 && strlen(argv[1]) >= 2 && argv[1][0] == '-')
+	std::cout << "\nSST39SF0x0A FLASH Programmer v2.0";
+	std::cout << " written by Carsten Herting (2023)\n\n";
+	if (argc == 2)
 	{
-		switch (argv[1][1])
+		std::cout << "o Opening serial port... ";
+		CSerial com;
+		int port = com.GetFirstComPort();
+		if (port != -1 && com.Open(port, 115200))
 		{
-			case 'c':
-			{
-				std::ifstream file(&argv[1][2], std::ios::binary | std::ios::in);
-				uint32_t checksum = 0;
-				if (file.is_open())
-				{
-					file.seekg (0, file.end);				// get byte length of file
-					int bytesize = file.tellg();
-					file.seekg (0, file.beg);					
-					
-					for(int i=0; i<bytesize; i++)
-					{
-						UCHAR to;
-						file.read((char*)&to, 1);
-						checksum += to;
-					}
-					std::cout << "FILE bytesize = " << bytesize << ", checksum = " << checksum << std::endl;
-					file.close();
-				} else std::cout << "ERROR: File not found." << std::endl;
-				break;
-			}			
-			case 'w':
-			{
-				std::ifstream file(&argv[1][2], std::ios::binary | std::ios::in);
-				if (file.is_open())
-				{
-					file.seekg (0, file.end);				// get byte length of file
-					int bytesize = file.tellg();
-					file.seekg (0, file.beg);
+			std::cout << "COM" << port << std::endl;
 
-					CSerial com;
-					int port = com.GetFirstComPort();
-					if (port != -1 && com.Open(port, 115200))
-					{
-						std::cout << "Opened COM" << port << std::endl;
-						UCHAR rec;
-						do { com.SendByte('w'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf Bestätigung
-						if(rec == 'W')
-						{
-							std::cout << "WRITE MODE" << std::endl;
-							char filebuf[bytesize];
-							file.read(filebuf, bytesize);
-							uint32_t checksum = 0;
-							for (int i=0; i<bytesize; i++) checksum += UCHAR(filebuf[i]);
-							std::cout << "FILE bytesize = " << bytesize << ", checksum = " << checksum << std::endl;							
-							for(int i=0; i<bytesize; i+=32)
-							{
-								com.SendData((const char *)&filebuf[i], 32);
-								while(com.ReadData(&rec, 1) == 0);
-								std::cout << "\e[GWRITING " << 100*i/bytesize << "%";
-							} 
-							std::cout << "\e[GWRITING 100%" << std::endl;
-							com.SendByte('r');											// switch to read mode and verify
-							while(com.ReadData(&rec, 1) == 0);
-							if(rec == 'R')
-							{
-								uint32_t nowticks, lastticks = GetTickCount();
-								int errors = 0, pos = 0;
-								checksum = 0;
-								do
-								{
-									nowticks = GetTickCount();
-									if (com.ReadData(&rec, 1) != 0)
-									{
-										if (rec != UCHAR(filebuf[pos])) errors++;
-										pos++;
-										checksum += rec;
-										lastticks = nowticks;
-									}
-								} while (nowticks - lastticks < 500);
-								std::cout << "VERIFYING: " << errors << " errors" << std::endl;
-								std::cout << "READ bytesize = " << pos << ", checksum = " << checksum << std::endl;
-							} else std::cout << "ERROR: Unable to verify: " << int(rec) << std::endl;
-							com.Close();
-						} else std::cout << "ERROR: Unable to enter WRITE mode." << std::endl;
-					} else std::cout << "ERROR: Can't open COM port." << std::endl;
-					file.close();
-				} else std::cout << "ERROR: File not found." << std::endl;
-				break;
-			}
-			case 'r':
+			std::cout << "o Loading image file... ";
+			std::ifstream file(&argv[1][0], std::ios::binary | std::ios::in);
+			if (file.is_open())
 			{
-				CSerial com;
-				int port = com.GetFirstComPort();
-				if (port != -1 && com.Open(port, 115200))
+				file.seekg (0, file.end);				// get bytesize of binary image file
+				int bytesize = file.tellg();
+				file.seekg (0, file.beg);
+				char filebuf[bytesize];
+				file.read(filebuf, bytesize);
+				file.close();
+				std::cout << bytesize << " bytes" << std::endl;
+
+				std::cout << "o Looking for FLASH programmer... ";
+				Sleep(100);
+				com.SendByte('a'); // send request for handshake
+				unsigned char rec=0;
+				Sleep(100); com.ReadData(&rec, 1); // expect handshake byte
+				if(rec == 'A') // first handshake received from Arduino?
 				{
-					std::cout << "Opened COM" << port << std::endl;
-					UCHAR rec;
-					do { com.SendByte('r'); Sleep(100); } while(com.ReadData(&rec, 1) == 0);		// warte auf eine Antwort
-					if (rec == 'R')													// kam das 'R'
+					std::cout << "OK" << std::endl;
+					
+					std::cout << "o Transmitting file bytesize... ";
+					com.SendData(std::to_string(bytesize));
+					com.SendByte('b');
+
+					rec=0;
+					Sleep(100); com.ReadData(&rec, 1); // expect handshake byte
+					if(rec == 'B') // first handshake received from Arduino?
 					{
-						std::cout << "READ MODE" << std::endl;
-						uint32_t bytesize = 0, checksum = 0;
-						std::ofstream file;
-						if (strlen(argv[1]) > 2) file.open(&argv[1][2], std::ios::binary | std::ios::out);
-						uint32_t nowticks, lastticks = GetTickCount();
+						std::cout << "OK" << std::endl;
+						
+						int pos=0;
+						int oldper = -1;
+						while (pos < bytesize)
+						{
+							int chunk;
+							if (pos+32 <= bytesize) chunk = 32; else chunk = bytesize - pos;
+							com.SendData((const char *)&filebuf[pos], chunk);
+							pos += chunk;
+							while(com.ReadData(&rec, 1) == 0); // wait for any confirmation
+							int per = 100*pos/bytesize;
+							if (per != oldper) { std::cout << "\e[Go Writing... " << per << "%"; oldper = per; }
+						}
+						std::cout << std::endl;
+
+						unsigned int nowticks, lastticks = GetTickCount();
+						int errors = 0;
+						pos = 0;
+						oldper = -1;
 						do
 						{
 							nowticks = GetTickCount();
 							if (com.ReadData(&rec, 1) != 0)
 							{
-								bytesize++;
-								checksum += rec;
-								if (file.is_open()) file << rec;
+								if (rec != UCHAR(filebuf[pos])) errors++;
+								pos++;
 								lastticks = nowticks;
+								int per = 100*(pos)/bytesize;
+								if (per != oldper) { std::cout << "\e[Go Verifying... " << per << "%"; oldper = per; }
 							}
 						} while (nowticks - lastticks < 500);
-						if (file.is_open()) file.close();
-						std::cout << "READ bytesize = " << bytesize << ", checksum = " << checksum << std::endl;
-						com.Close();
-					} else std::cout << "ERROR: Unable to enter READ mode." << std::endl;
-				} else std::cout << "ERROR: Can't open COM port." << std::endl;
-				break;
-			}
-			default: helpscreen(); break;
-		}
+						if (pos == bytesize) // check for size mismatch
+						{
+							std::cout << std::endl << std::endl << errors << " errors" << std::endl;
+						} else std::cout << "\nERROR: File size mismatch." << std::endl;
+					} else std::cout << "\nERROR: FLASH programmer doesn't confirm bytesize." << std::endl;
+				} else std::cout << "\nERROR: FLASH programmer doesn't respond." << std::endl;
+			} else std::cout << "\nERROR: Can't open file '" << &argv[1][0] << "'" << std::endl;
+			com.Close();
+		} else std::cout << "\nERROR: Can't open COM port." << std::endl;
 	} else helpscreen();
-
 	return 0;
 }
 
@@ -233,7 +187,7 @@ int main(int argc, char *argv[])
 This software is available under 2 licenses -- choose whichever you prefer.
 ------------------------------------------------------------------------------
 ALTERNATIVE A - MIT License
-Copyright (c) 2020 Carsten Herting
+Copyright (c) 2023 Carsten Herting
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
 the Software without restriction, including without limitation the rights to
