@@ -1,17 +1,21 @@
-// SST39SF0x0 Flash EEPROM Programmer by Carsten Herting 26.3.2021
-// Will read and write image filesup to 512KB. Adjust the READSIZE below to your needs.
-
-#define READSIZE          0x2000                      // CHANGE YOURSELF: Bytesize of the MEMORY CHUNK to READ from the chip
+// ****************************************************************************************
+// *****                                                                              *****
+// ***** SST39SF0x0 FLASH EEPROM Programmer by Carsten Herting, last update 23.6.2023 *****
+// *****                                                                              *****
+// ****************************************************************************************
 
 #define SET_OE(state)     bitWrite(PORTB, 0, state)   // must be high for write process
 #define SET_WE(state)     bitWrite(PORTB, 1, state)   // must be a 100-1000ns low pulse
 #define READ_DATA         (((PIND & 0b01111100) << 1) | (PINC & 0b00000111))
 #define LED(state)        bitWrite(PORTB, 5, state)   // Indicator LED
 
+int state=0;                      // state machine of Arduino programmer
+long readsize;                    // bytesize is transmitted by host programmer
+
 void setup()
 {
-  PORTB = 0b00100011;             // B5: LED on, /WE=HIGH, /OE=HIGH, B2-4: 74595 SER, SRCLK, RCLK
-  DDRB = 0b00111111;              // set all to outputs
+  PORTB = 0b00000011;             // B5: LED off, /WE=HIGH, /OE=HIGH, B2-4: 74595 SER, SRCLK, RCLK
+  DDRB = 0b00111111;              // set all bits to outputs
   PORTC = 0; DDRC = 0b00111000;   // C3-5: address lines A16, A17, A18
   PORTD = 0; DDRD = 0b00000000;
   Serial.begin(115200);
@@ -19,46 +23,79 @@ void setup()
 
 void loop()
 {
-  PORTB = 0b00100011;           // LED on, /WE=HIGH, /OE=HIGH, 74595 all LOW
-  
-  if (Serial.available() != 0)
+  switch(state)
   {
-    switch(Serial.read())
+    case -1: // blinking LED = error
     {
-      case 'w':
-        Serial.write('W'); LED(LOW);
-        if (EraseFLASH() == true)
-        {
-          long nowmillis, lastmillis = millis();
-          long adr = 0;
-          do
-          {
-            do nowmillis = millis(); while (Serial.available() < 32 && nowmillis - lastmillis < 200);
-            if (nowmillis - lastmillis < 200)
-            {
-              for(int i=0; i<32; i++)
-              {
-                byte dat = Serial.read();                  // read byte
-                while (WriteFLASH(adr, dat) == false);     // try writing the bytes again and again
-                adr++;
-              }
-              Serial.write(1);                             // send handshake
-              lastmillis = nowmillis;
-            }
-          } while (nowmillis - lastmillis < 200);
-        }
-        break;
-      case 'r':        
-        Serial.write('R'); LED(LOW);
-        ToRead();
-        SET_OE(LOW);                                    // activate EEPROM outputs
-        for(long i=0; i<READSIZE; i++) { SetAddress(i); Serial.write(READ_DATA); }
-        SET_OE(HIGH);                                   // deactivate EEPROM outputs
-        break;
-      default:
-        break;
+      LED(HIGH); delay(100); LED(LOW); delay(100); // blinking
+      break;
     }
-  }      
+    case 0: // waiting for handshake 'a'
+    {
+      if (Serial.available() > 0)
+      {
+        if (Serial.read() == 'a') { Serial.write('A'); readsize = 0; LED(HIGH); state = 1; } // confirm handshake
+        else state = -1; // unexpected char => error
+      }
+      break;
+    }
+    case 1: // waiting for bytesize and handshake 'b'
+    {
+      if (Serial.available() > 0)
+      {
+        char c = Serial.read();
+        if (c >= '0' && c <= '9') readsize = readsize*10 + c - '0';
+        else if (c == 'b') { Serial.write('B'); state = 2; break; } // confirm received bytesize
+        else state = -1; // unexpected char => error
+      }
+      break;
+    }  
+    case 2: // receiving and writing data to FLASH
+    {
+      LED(LOW);
+      if (EraseFLASH() == true) // completely erase the FLASH IC first
+      {
+        long lastmillis = millis();
+        long adr = 0; // always commence writing at address zero
+        while (true)
+        {
+          int avail;
+          do avail = Serial.available(); while (avail < 32 && millis() - lastmillis < 200);
+
+          if (avail > 0)                                 // received some data?
+          {
+            for(int i=0; i<avail; i++)                   // write the data
+            {
+              byte dat = Serial.read();                  // read byte
+              while (WriteFLASH(adr, dat) == false);     // try writing the bytes again and again
+              adr++;
+            }
+            Serial.write(1);                             // send handshake
+            lastmillis = millis();
+          }
+          else // no data available any more
+          {
+            if (adr == readsize) state = 3; else state = -1; // correct number of bytes sent?
+            break;
+          }
+        }
+      } else state = -1;
+      break;
+    }
+    case 3: // readout FLASH and send back the data for verification
+    {
+      LED(HIGH);
+      ToRead();
+      SET_OE(LOW);                                    // activate EEPROM outputs
+      for(long i=0; i<readsize; i++) { SetAddress(i); Serial.write(READ_DATA); }
+      SET_OE(HIGH);                                   // deactivate EEPROM outputs
+      LED(LOW);
+      state = 0;
+      break;
+    }
+    default: // received some undefined character
+      state = -1; break;
+  }
 }
 
 void SetAddress(long adr)
@@ -93,7 +130,7 @@ void WriteTo(byte data)
 bool EraseFLASH()
 {
   SET_OE(HIGH);
-  SetAddress(0x5555); WriteTo(0xaa); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);   // Chip Erase command 
+  SetAddress(0x5555); WriteTo(0xaa); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);   // invoke 'Chip Erase' command 
   SetAddress(0x2aaa); WriteTo(0x55); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);
   SetAddress(0x5555); WriteTo(0x80); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);
   SetAddress(0x5555); WriteTo(0xaa); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);
@@ -101,9 +138,9 @@ bool EraseFLASH()
   SetAddress(0x5555); WriteTo(0x10); SET_WE(HIGH); SET_WE(LOW); SET_WE(HIGH);
   ToRead();
   SET_OE(LOW);
-  int c = 0; while ((READ_DATA & 128) != 128 && c < 2000) { c++; delayMicroseconds(100); }  // success < 700
+  int c = 0; while ((READ_DATA & 128) != 128 && c < 2000) { c++; delayMicroseconds(100); }
   SET_OE(HIGH);
-  if (c < 2000) return true; else return false;
+  return c < 2000; // SUCCESS condition
 }
 
 bool WriteFLASH(long adr, byte data)
@@ -118,6 +155,5 @@ bool WriteFLASH(long adr, byte data)
   SET_OE(LOW);              // activate the output for data polling
   byte c = 0; while ((READ_DATA&128) != (data&128) && c < 100) c++;   // success < 17
   SET_OE(HIGH);             // deactivate the outputs
-  if (c < 100) return true; else return false;
-  return true;
+  return c < 100;           // SUCCESS condition
 }
