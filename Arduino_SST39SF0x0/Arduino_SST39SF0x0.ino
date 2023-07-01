@@ -1,8 +1,8 @@
-// ****************************************************************************************
-// *****                                                                              *****
-// ***** SST39SF0x0 FLASH EEPROM Programmer by Carsten Herting, last update 23.6.2023 *****
-// *****                                                                              *****
-// ****************************************************************************************
+// *********************************************************************************
+// *****                                                                       *****
+// ***** SST39SF0x0 FLASH Programmer by Carsten Herting, last update 29.6.2023 *****
+// *****                                                                       *****
+// *********************************************************************************
 
 #define SET_OE(state)     bitWrite(PORTB, 0, state)   // must be high for write process
 #define SET_WE(state)     bitWrite(PORTB, 1, state)   // must be a 100-1000ns low pulse
@@ -18,7 +18,7 @@ void setup()
   DDRB = 0b00111111;              // set all bits to outputs
   PORTC = 0; DDRC = 0b00111000;   // C3-5: address lines A16, A17, A18
   PORTD = 0; DDRD = 0b00000000;
-  Serial.begin(115200);
+  Serial.begin(115200, SERIAL_8N1);
 }
 
 void loop()
@@ -34,7 +34,13 @@ void loop()
     {
       if (Serial.available() > 0)
       {
-        if (Serial.read() == 'a') { Serial.write('A'); readsize = 0; LED(HIGH); state = 1; } // confirm handshake
+        if (Serial.read() == 'a')  // confirm first handshake
+        {
+          Serial.write('A');
+          readsize = 0;
+          LED(HIGH);
+          state = 1;
+        }
         else state = -1; // unexpected char => error
       }
       break;
@@ -44,7 +50,7 @@ void loop()
       if (Serial.available() > 0)
       {
         char c = Serial.read();
-        if (c >= '0' && c <= '9') readsize = readsize*10 + c - '0';
+        if (c >= '0' && c <= '9') { readsize = readsize*10 + c - '0'; Serial.write(c); } // echo
         else if (c == 'b') { Serial.write('B'); state = 2; break; } // confirm received bytesize
         else state = -1; // unexpected char => error
       }
@@ -55,30 +61,28 @@ void loop()
       LED(LOW);
       if (EraseFLASH() == true) // completely erase the FLASH IC first
       {
-        long lastmillis = millis();
+        Serial.write('C');
         long adr = 0; // always commence writing at address zero
-        while (true)
+        do
         {
-          int avail;
-          do avail = Serial.available(); while (avail < 32 && millis() - lastmillis < 200);
-
-          if (avail > 0)                                 // received some data?
+          byte chunk[32];
+          int p=0;
+          long lastmillis = millis();
+          do
           {
-            for(int i=0; i<avail; i++)                   // write the data
+            if (Serial.available() > 0)
             {
-              byte dat = Serial.read();                  // read byte
-              while (WriteFLASH(adr, dat) == false);     // try writing the bytes again and again
-              adr++;
+              chunk[p++] = Serial.read(); lastmillis = millis();
             }
-            Serial.write(1);                             // send handshake
-            lastmillis = millis();
-          }
-          else // no data available any more
+          } while (p < 32 && millis() - lastmillis < 500);
+
+          if (p > 0)                                 // received some data?
           {
-            if (adr == readsize) state = 3; else state = -1; // correct number of bytes sent?
-            break;
+            for(int i=0; i<p; i++) WriteFLASH(adr++, chunk[i]);
+            Serial.write('D');
           }
-        }
+        } while (adr < readsize);
+        state = 3;
       } else state = -1;
       break;
     }
@@ -87,7 +91,11 @@ void loop()
       LED(HIGH);
       ToRead();
       SET_OE(LOW);                                    // activate EEPROM outputs
-      for(long i=0; i<readsize; i++) { SetAddress(i); Serial.write(READ_DATA); }
+      for(long i=0; i<readsize; i++)
+      {
+        SetAddress(i);
+        Serial.write(READ_DATA);
+      }
       SET_OE(HIGH);                                   // deactivate EEPROM outputs
       LED(LOW);
       state = 0;
@@ -102,7 +110,7 @@ void SetAddress(long adr)
 { 
   for (byte i=0; i<16; i++)
   {
-    bitWrite(PORTB, 2, adr & 1); adr = adr>>1;            // push in the bits (lowest first)
+    bitWrite(PORTB, 2, adr & 1); adr = adr>>1;            // push the bits (lowest first) into SER
     bitWrite(PORTB, 3, LOW); bitWrite(PORTB, 3, HIGH);    // toggle SRCLK
   }
   bitWrite(PORTB, 4, HIGH); bitWrite(PORTB, 4, LOW);      // toggle RCLK
@@ -121,9 +129,9 @@ void ToRead()
 
 void WriteTo(byte data)
 {
-  DDRC |= 0b00000111;       // set C0-2 to outputs
+  DDRC |= 0b00000111;       // set C0..2 to outputs
   PORTC = (PORTC & 0b00111000) | (data & 0b00000111); // write the lower 3 bits to C0-2
-  DDRD |= 0b01111100;       // set D2-d6 to outputs
+  DDRD |= 0b01111100;       // set D2..6 to outputs
   PORTD = (PORTD & 0b10000011) | ((data & 0b11111000) >> 1);  // write the upper 5 bits to D2-6
 }
 
@@ -153,7 +161,7 @@ bool WriteFLASH(long adr, byte data)
   SetAddress(adr); WriteTo(data); SET_WE(HIGH); SET_WE(LOW); SET_WE(LOW); SET_WE(HIGH);
   ToRead();
   SET_OE(LOW);              // activate the output for data polling
-  byte c = 0; while ((READ_DATA&128) != (data&128) && c < 100) c++;   // success < 17
+  int c = 0; while (((READ_DATA&128) != (data&128)) && (c < 100)) c++;   // success < 17
   SET_OE(HIGH);             // deactivate the outputs
   return c < 100;           // SUCCESS condition
 }
