@@ -7,6 +7,6 @@ Hardware Version 1.1
 
 Software Version 2.1
 
-I've included a PCB version of the breadboard hardware and updated the software. Now out can write any file <= 512KB with fully automated file size and data transmission and verification. No need to edit file sizes in the Arduino sketch any more.
+NEW: I've included a PCB version (schematics and Gerber files) of the breadboard hardware and upgraded the software. Now you can write any file size <= 512KB with fully automated data transmission and verification. No need to edit file sizes in the Arduino sketch any more.
 
 Have fun!
