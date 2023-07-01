@@ -25,12 +25,7 @@ void loop()
 {
   switch(state)
   {
-    case -1: // blinking LED = error
-    {
-      LED(HIGH); delay(100); LED(LOW); delay(100); // blinking
-      break;
-    }
-    case 0: // waiting for handshake 'a'
+    default: // waiting for handshake 'a'
     {
       if (Serial.available() > 0)
       {
@@ -41,7 +36,7 @@ void loop()
           LED(HIGH);
           state = 1;
         }
-        else state = -1; // unexpected char => error
+        else state = 0;
       }
       break;
     }
@@ -52,7 +47,7 @@ void loop()
         char c = Serial.read();
         if (c >= '0' && c <= '9') { readsize = readsize*10 + c - '0'; Serial.write(c); } // echo
         else if (c == 'b') { Serial.write('B'); state = 2; break; } // confirm received bytesize
-        else state = -1; // unexpected char => error
+        else state = 0;
       }
       break;
     }  
@@ -83,7 +78,7 @@ void loop()
           }
         } while (adr < readsize);
         state = 3;
-      } else state = -1;
+      } else state = 0;
       break;
     }
     case 3: // readout FLASH and send back the data for verification
@@ -101,8 +96,6 @@ void loop()
       state = 0;
       break;
     }
-    default: // received some undefined character
-      state = -1; break;
   }
 }
 
