@@ -76,7 +76,7 @@ public:
 	int GetFirstComPort() 	//added function to find the first present serial port (COM)
 	{
 		char buffer[100]; 	// buffer to store the path of the COMPORTS
-		for (int i = 0; i < 255; i++) // checking ports from COM0 to COM255
+		for (int i = 0; i <256; i++) // checking ports from COM0 to COM255
 		{
 			std::string str = "COM" + std::to_string(i); // converting to COM0, COM1, COM2
 			if (QueryDosDeviceA(str.c_str(), buffer, sizeof(buffer)) != 0) return i;
@@ -92,6 +92,7 @@ void helpscreen()
 	std::cout << "Usage: prom <file>\n";
 	std::cout << "Writes the binary content of <file> to FLASH.\n";
 	std::cout << "All data is read back and verified.\n";
+	std::cout << "Press Ctrl+C to exit.\n";
 }
 
 int main(int argc, char *argv[])
@@ -99,6 +100,7 @@ int main(int argc, char *argv[])
 	SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), 0b111);		// enable ANSI control sequences in WINDOWS console
 	std::cout << "\nSST39SF0x0A FLASH Programmer v2.0";
 	std::cout << " written by Carsten Herting (2023)\n\n";
+
 	if (argc == 2)
 	{
 		std::cout << "o Opening serial port... ";
@@ -121,10 +123,8 @@ int main(int argc, char *argv[])
 				std::cout << bytesize << " bytes" << std::endl;
 
 				std::cout << "o Looking for FLASH programmer... ";
-				Sleep(100);
 				com.SendByte('a'); // send request for handshake
-				unsigned char rec=0;
-				Sleep(100); com.ReadData(&rec, 1); // expect handshake byte
+				unsigned char rec=0; while (com.ReadData(&rec, 1) == 0); // wait for any handshake byte
 				if(rec == 'A') // first handshake received from Arduino?
 				{
 					std::cout << "OK" << std::endl;
@@ -133,46 +133,62 @@ int main(int argc, char *argv[])
 					com.SendData(std::to_string(bytesize));
 					com.SendByte('b');
 
-					rec=0;
-					Sleep(100); com.ReadData(&rec, 1); // expect handshake byte
-					if(rec == 'B') // first handshake received from Arduino?
+					int recsize = 0; rec=0;
+					do
 					{
-						std::cout << "OK" << std::endl;
-						
-						int pos=0;
-						int oldper = -1;
-						while (pos < bytesize)
+						if (com.ReadData(&rec, 1) == 1 && rec >= '0' && rec <= '9')
 						{
-							int chunk;
-							if (pos+32 <= bytesize) chunk = 32; else chunk = bytesize - pos;
-							com.SendData((const char *)&filebuf[pos], chunk);
-							pos += chunk;
-							while(com.ReadData(&rec, 1) == 0); // wait for any confirmation
-							int per = 100*pos/bytesize;
-							if (per != oldper) { std::cout << "\e[Go Writing... " << per << "%"; oldper = per; }
+							recsize = recsize*10 + rec - '0';
+							std::cout << rec;
 						}
-						std::cout << std::endl;
+					} while (rec != 'B'); // expect handshake byte
+					
+					if (recsize == bytesize)
+					{
+						std::cout << " OK" << std::endl;
+						std::cout << "o Erasing FLASH... ";
+						rec = 0; while (com.ReadData(&rec, 1) == 0); // wait for any handshake byte
+						if(rec == 'C') // first handshake received from Arduino?
+						{
+							std::cout << "OK" << std::endl;
 
-						unsigned int nowticks, lastticks = GetTickCount();
-						int errors = 0;
-						pos = 0;
-						oldper = -1;
-						do
-						{
-							nowticks = GetTickCount();
-							if (com.ReadData(&rec, 1) != 0)
+							std::cout << "\e[Go Writing...";
+							int pos=0;
+							int oldper = -1;
+							while (pos < bytesize)
 							{
-								if (rec != UCHAR(filebuf[pos])) errors++;
-								pos++;
-								lastticks = nowticks;
-								int per = 100*(pos)/bytesize;
-								if (per != oldper) { std::cout << "\e[Go Verifying... " << per << "%"; oldper = per; }
+								int chunk = 32; // max buffersize of Arduino UART is 64 bytes
+								if (pos + chunk > bytesize) chunk = bytesize - pos;
+								com.SendData((const char *)&filebuf[pos], chunk);
+								pos += chunk;
+								while (com.ReadData(&rec, 1) == 0); // wait for any confirmation
+								int per = 100*pos/bytesize;
+								if (per != oldper) { std::cout << "\e[Go Writing... " << per << "%"; oldper = per; }
 							}
-						} while (nowticks - lastticks < 500);
-						if (pos == bytesize) // check for size mismatch
-						{
-							std::cout << std::endl << std::endl << errors << " errors" << std::endl;
-						} else std::cout << "\nERROR: File size mismatch." << std::endl;
+							std::cout << " OK" << std::endl;
+
+							std::cout << "\e[Go Verifying...";
+							unsigned int nowticks, lastticks = GetTickCount();
+							int errors = 0;
+							pos = 0;
+							oldper = -1;
+							do
+							{
+								nowticks = GetTickCount();
+								if (com.ReadData(&rec, 1) == 1)
+								{
+									if (rec != UCHAR(filebuf[pos])) errors++;
+									pos++;
+									lastticks = nowticks;
+									int per = 100*(pos)/bytesize;
+									if (per != oldper) { std::cout << "\e[Go Verifying... " << per << "%"; oldper = per; }
+								}
+							} while (nowticks - lastticks < 1000 && pos < bytesize);
+							if (pos == bytesize) // check for size mismatch
+							{
+								std::cout << " OK" << std::endl << std::endl << errors << " errors" << std::endl;
+							} else std::cout << "\nERROR: File size mismatch or time-out: " << pos << "/" << bytesize << std::endl;
+						} else std::cout << "\nERROR: FLASH programmer can't erase FLASH." << std::endl;
 					} else std::cout << "\nERROR: FLASH programmer doesn't confirm bytesize." << std::endl;
 				} else std::cout << "\nERROR: FLASH programmer doesn't respond." << std::endl;
 			} else std::cout << "\nERROR: Can't open file '" << &argv[1][0] << "'" << std::endl;
