@@ -98,54 +98,49 @@ void helpscreen()
 int main(int argc, char *argv[])
 {		
 	SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), 0b111);		// enable ANSI control sequences in WINDOWS console
-	std::cout << "\nSST39SF0x0A FLASH Programmer v2.0";
-	std::cout << " written by Carsten Herting (2023)\n\n";
-
+	std::cout << "\nSST39SF0x0A FLASH Programmer v2.1\n";
+	std::cout <<   "Written by C. Herting (slu4) 2023\n\n";
 	if (argc == 2)
 	{
-		std::cout << "o Opening serial port... ";
-		CSerial com;
-		int port = com.GetFirstComPort();
-		if (port != -1 && com.Open(port, 115200))
+		std::cout << "o Loading image file... ";
+		std::ifstream file(&argv[1][0], std::ios::binary | std::ios::in);
+		if (file.is_open())
 		{
-			std::cout << "COM" << port << std::endl;
+			file.seekg (0, file.end);				// get bytesize of binary image file
+			int bytesize = file.tellg();
+			file.seekg (0, file.beg);
+			char filebuf[bytesize];
+			file.read(filebuf, bytesize);
+			file.close();
+			std::cout << bytesize << " bytes" << std::endl;
 
-			std::cout << "o Loading image file... ";
-			std::ifstream file(&argv[1][0], std::ios::binary | std::ios::in);
-			if (file.is_open())
+			std::cout << "o Opening serial port... ";
+			CSerial com;
+			int port = com.GetFirstComPort();
+			if (port != -1 && com.Open(port, 115200))
 			{
-				file.seekg (0, file.end);				// get bytesize of binary image file
-				int bytesize = file.tellg();
-				file.seekg (0, file.beg);
-				char filebuf[bytesize];
-				file.read(filebuf, bytesize);
-				file.close();
-				std::cout << bytesize << " bytes" << std::endl;
+				std::cout << "COM" << port << std::endl;
 
-				std::cout << "o Looking for FLASH programmer... ";
+				std::cout << "o Looking for programmer... ";
 				com.SendByte('a'); // send request for handshake
 				unsigned char rec=0; while (com.ReadData(&rec, 1) == 0); // wait for any handshake byte
 				if(rec == 'A') // first handshake received from Arduino?
 				{
 					std::cout << "OK" << std::endl;
 					
-					std::cout << "o Transmitting file bytesize... ";
+					std::cout << "o Sending bytesize... ";
 					com.SendData(std::to_string(bytesize));
 					com.SendByte('b');
 
 					int recsize = 0; rec=0;
 					do
 					{
-						if (com.ReadData(&rec, 1) == 1 && rec >= '0' && rec <= '9')
-						{
-							recsize = recsize*10 + rec - '0';
-							std::cout << rec;
-						}
+						if (com.ReadData(&rec, 1) == 1 && rec >= '0' && rec <= '9') recsize = recsize*10 + rec - '0';
 					} while (rec != 'B'); // expect handshake byte
 					
 					if (recsize == bytesize)
 					{
-						std::cout << " OK" << std::endl;
+						std::cout << "OK" << std::endl;
 						std::cout << "o Erasing FLASH... ";
 						rec = 0; while (com.ReadData(&rec, 1) == 0); // wait for any handshake byte
 						if(rec == 'C') // first handshake received from Arduino?
@@ -186,14 +181,16 @@ int main(int argc, char *argv[])
 							} while (nowticks - lastticks < 1000 && pos < bytesize);
 							if (pos == bytesize) // check for size mismatch
 							{
-								std::cout << " OK" << std::endl << std::endl << errors << " errors" << std::endl;
-							} else std::cout << "\nERROR: File size mismatch or time-out: " << pos << "/" << bytesize << std::endl;
-						} else std::cout << "\nERROR: FLASH programmer can't erase FLASH." << std::endl;
-					} else std::cout << "\nERROR: FLASH programmer doesn't confirm bytesize." << std::endl;
-				} else std::cout << "\nERROR: FLASH programmer doesn't respond." << std::endl;
-			} else std::cout << "\nERROR: Can't open file '" << &argv[1][0] << "'" << std::endl;
-			com.Close();
-		} else std::cout << "\nERROR: Can't open COM port." << std::endl;
+								std::cout << " OK" << std::endl << std::endl;
+								if (errors == 0) std::cout << "SUCCESS" << std::endl;
+								else std::cout << errors << " ERRORS" << std::endl;
+							} else std::cout << "\nERROR: File size mismatch." << std::endl;
+						} else std::cout << "\nERROR: Programmer can't erase FLASH." << std::endl;
+					} else std::cout << "\nERROR: Programmer doesn't confirm bytesize." << std::endl;
+				} else std::cout << "\nERROR: Programmer doesn't respond." << std::endl;
+				com.Close();
+			} else std::cout << "\nERROR: Can't open COM port." << std::endl;
+		} else std::cout << "\nERROR: Can't open file '" << &argv[1][0] << "'" << std::endl;
 	} else helpscreen();
 	return 0;
 }
