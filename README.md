@@ -1,5 +1,7 @@
 # SST39SF0x0-FLASH-Programmer
 
+![image](https://github.com/slu4coder/SST39SF010-FLASH-Programmer/assets/52576999/291e524d-dfee-4bb3-8034-ffe6a9797b14)
+
 Build information for my DIY SST39SF0x0 FLASH programmer. Program FLASH EEPROMs from Scratch in less than 20 minutes.
 See my YouTube channel https://www.youtube.com/channel/UCXYQcMpUBT3aaQKfmAVJNow for more information.
 
