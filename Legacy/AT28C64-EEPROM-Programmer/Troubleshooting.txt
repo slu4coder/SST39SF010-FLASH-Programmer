@@ -1,0 +1,14 @@
+TROUBLESHOOTING INFO
+
+The EEPROM writer supplies Vcc to the AT28C64 via pin D7 of the Arduino. This way, the EEPROM is only powered during intentional read or write operations (with the power left on all the time, the Arduino's power-up sequence can potentially lead to accidential write operations within the EEPROM).
+
+The specification for the EEPROM supply voltage requires Vcc = 4.5 - 5.5V. The voltage supplied by the Arduino's pin D7 varies between 4.6V and 4.8V accross a bunch of different Arduinos I've tried. With each of these, writing worked flawlessly during all my tests, but I suspect the manufacturing quality of the EEPROMs you use may also play a role here.
+
+Therfore, IF you happen to have an EEPROM that refuses to be programmed, I suggest, you try the following:
+
+	- Disconnect the jumper wire from Arduino pin D7 to the 5V power rail of the breadboard.
+	- Use a clean 5.0V power supply instead and connect it's power and ground to the Vcc and ground rails of the breadboard.
+	- Connect Vcc only while working on the EEPROM. Disconnect Vcc during the Arduino's power-up sequence (see above).
+
+Cheers,
+Slu4
