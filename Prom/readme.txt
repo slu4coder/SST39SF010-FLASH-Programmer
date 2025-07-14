@@ -1,8 +1,4 @@
-prom.exe will work with any FLASH / image size. Please note, that you can and should adjust the read bytesize inside the Arduino sketch to your liking.
-
-Having installed 'g++' on your system (instructions see below), compile with
-  g++ main.cpp -oprom.exe -Os -s -static
-or just type 'make' if you have installed it.
+See source code for build instructions.
 
 Using g++ on Windows:
 - Download MSYS2-x86_64.xxxxx.exe (64-bit version)
